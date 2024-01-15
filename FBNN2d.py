@@ -3,7 +3,7 @@ import random
 from scipy.stats import ortho_group
 
 from keras.models import Sequential
-from keras.layers import Dense,Dropout,LeakyReLU
+from keras.layers import Dense,Dropout,BatchNormalization,Activation,LeakyReLU
 
 
 # for 20points
@@ -47,7 +47,7 @@ def gene_data(gene_func,Sig_lim=20,mu_lim=20,gene_size=500,multi=100):
         x_gene.append(myhist)
         y_gene.append(list(Sig[0])+list(Sig[1][1:2])+list(mu))
 
-    return (x_gene,y_gene)
+    return (np.array(x_gene),np.array(y_gene))
 
 def hist_Normalize(hist,Sig,mu,center=0):
     M = int(center/np.pi*10) + hist.index(max(hist))
@@ -78,19 +78,43 @@ def gene_data_Normalize(gene_func,Sig_lim=20,mu_lim=20,gene_size=500,multi=100,c
         x_gene.append(myhist)
         y_gene.append(list(Sig[0])+list(Sig[1][1:2])+list(mu))
         rads.append(rad)
+    x_gene=np.array(x_gene)
+    y_gene=np.array(y_gene)
 
     if(rad_option): return (x_gene,y_gene),rads
     else: return (x_gene,y_gene)
 
 
-def set_model(n_hidden=100,n_layer=1,print_summary=True):
+def set_model(n_hidden=100,n_layer=1,drop_rate=0.2,print_summary=True):
     model = Sequential()
     model.add(Dense(n_hidden, activation='relu', input_shape=(20,)))
-    model.add(Dropout(0.2))
+    model.add(Dropout(drop_rate))
     for _ in range(n_layer-1):
         model.add(Dense(n_hidden, activation='relu'))
-        model.add(Dropout(0.2))
+        model.add(Dropout(drop_rate))
     model.add(Dense(5, activation='linear'))
+
+    if(print_summary): model.summary()
+
+    model.compile(loss='mse',
+                    optimizer='adam',
+                    metrics=['mae'])
+    # mse（平均二乗誤差）
+    # mae（平均絶対誤差）
+    
+    return model
+
+def set_model_BN(n_hidden=100,n_layer=1,print_summary=True):
+    model = Sequential()
+    model.add(Dense(n_hidden, input_shape=(20,)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    for _ in range(n_layer-1):
+        model.add(Dense(n_hidden))
+        model.add(BatchNormalization())
+        model.add(Activation('relu'))
+    model.add(Dense(5, activation='linear'))
+    # BatchNormalization(synchronized=True)
 
     if(print_summary): model.summary()
 
