@@ -499,7 +499,7 @@ def optimal_orth(th,gg,A,B,O=None,n=1,tol=1e-2):
 
 
 
-def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=True,AA_plus=False):
+def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=True,AA_plus=False,cb_func=None):
     #This optimises the likelihood for a fixed orthogonal matrix O
     if(O is None): O=np.eye(len(gg))
     start = time.time()
@@ -513,8 +513,10 @@ def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=Tr
 
     # print(th,gg)
     ll = Grad_mle_update(th,gg,A=A,B=B,O=O,n=n,log_print=log_print)
+    if(cb_func!=None): cb_func(ll)
     # print(ll["th"],ll["gg"])
     llnew = Grad_mle_update(ll["th"],ll["gg"],A=A,B=B,n=n,log_print=log_print)
+    if(cb_func!=None): cb_func(llnew)
     # print(llnew["th"],llnew["gg"])
     a = np.linalg.norm(ll["th"] - llnew["th"], ord=1)
     b = np.linalg.norm(ll["gg"] - llnew["gg"], ord=1)
@@ -534,6 +536,7 @@ def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=Tr
         else:
             llnew = Grad_mle_update_optim_sqrt(ll["th"],ll["gg"],A=A,B=B,O=newO,n=n)
         
+        if(cb_func!=None): cb_func(llnew)
         if(log_print): 
             print("iteration")
             print(iters+1,a,b,c,llnew["mle"]["log"],llnew["mle"]["log"] - ll["mle"]["log"])
