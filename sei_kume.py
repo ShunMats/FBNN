@@ -329,6 +329,7 @@ def Loglikelihood(theta,gamma, A,B, O=None,n=1,method="hg",check=False):
     if(method=="SPA"):
         hgout = saddleaprox_FB_revised(np.sort(alpha1[0:p])+1, M=np.array(alpha1[p:(2*p)])/2, dub=1, order=3)
         hgout = np.array(hgout) * np.exp(1)
+        return -n*np.log(hgout) - np.sum(np.diag(A@O.T@np.diag(theta)@O - np.array([gamma]).T@B.T@O.T))
     if(method=="power"):
         hgout = G_FB(alpha1, method="power", withvol=True)
 
@@ -345,7 +346,7 @@ def Loglikelihood(theta,gamma, A,B, O=None,n=1,method="hg",check=False):
 
 
 
-def Grad_mle_update(th,gg,A,B,O=None,n=1,log_print=True):
+def Grad_mle_update(th,gg,A,B,O=None,n=1,log_print=True,t0=0):
     if(O is None): O=np.eye(len(gg))
 
     p = len(th)
@@ -360,7 +361,8 @@ def Grad_mle_update(th,gg,A,B,O=None,n=1,log_print=True):
     delta = 1
     current["grad"][0] = 0
     newth = np.array(th) + delta*np.array(current["grad"][0:(p)])
-    newth[0] = 0 # might need that for guaranteeing convergence
+    # newth[0] = 0 # might need that for guaranteeing convergence
+    newth[0] = t0
     newgg = np.array(gg) + delta*np.array(current["grad"][p:(2*p)])
 
     new = Loglikelihood(newth,newgg,A=A,B=B,n=n,O=O)
@@ -377,7 +379,7 @@ def Grad_mle_update(th,gg,A,B,O=None,n=1,log_print=True):
 
 
 
-def Grad_mle_update_optim(th,gg,A,B,O=None,n=1):
+def Grad_mle_update_optim(th,gg,A,B,O=None,n=1,t0=0):
     if(O is None): O=np.eye(len(gg))
 
     # 追加 
@@ -391,7 +393,8 @@ def Grad_mle_update_optim(th,gg,A,B,O=None,n=1):
     current = Loglikelihood(th,gg,A=A,B=B,O=O,n=n)	
     delta = 1
     newth = np.array(th) + delta*np.array(current["grad"][0:(p)])
-    newth[0] = 0  # might need that for guaranteeing convergence
+    # newth[0] = 0  # might need that for guaranteeing convergence
+    newth[0] = t0
     newgg = np.array(gg) + delta*np.array(current["grad"][p:(2*p)])
 
     def f(dl):
@@ -411,7 +414,7 @@ def Grad_mle_update_optim(th,gg,A,B,O=None,n=1):
     return y
 
 
-def Grad_mle_update_optim_sqrt(th,gg,A,B,O=None,n=1,dmax=1):
+def Grad_mle_update_optim_sqrt(th,gg,A,B,O=None,n=1,dmax=1,t0=0):
     #since th>0 and gg>0 we can write th=x^2 and gg=y^2 and optimize wrt x and y
     if(O is None): O=np.eye(len(gg))
 
@@ -422,7 +425,8 @@ def Grad_mle_update_optim_sqrt(th,gg,A,B,O=None,n=1,dmax=1):
     delta = 10
     newx = x * (1 + delta*np.array(current["grad"][0:(p)]))
     newy = y * (1 + delta*np.array(current["grad"][p:(2*p)]))
-    newx[0] = 0
+    # newx[0] = 0
+    newx[0] = t0
     current["grad"][0] = 0 # might need that for guaranteeing convergence
 
     def f(dl):
@@ -499,9 +503,12 @@ def optimal_orth(th,gg,A,B,O=None,n=1,tol=1e-2):
 
 
 
-def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=True,AA_plus=False,cb_func=None):
+def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,t0=0,
+                    log_print=True,AA_plus=False,cb_func=None,sqrt=True,Odet1=False):
     #This optimises the likelihood for a fixed orthogonal matrix O
     if(O is None): O=np.eye(len(gg))
+    if(sqrt is True):    update_func = Grad_mle_update_optim_sqrt
+    elif(sqrt is False): update_func = Grad_mle_update_optim
     start = time.time()
 
     # 追加 
@@ -512,10 +519,10 @@ def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=Tr
     O = Q@O
 
     # print(th,gg)
-    ll = Grad_mle_update(th,gg,A=A,B=B,O=O,n=n,log_print=log_print)
+    ll = Grad_mle_update(th,gg,A=A,B=B,O=O,n=n,log_print=log_print,t0=t0)
     if(cb_func!=None): cb_func(ll)
     # print(ll["th"],ll["gg"])
-    llnew = Grad_mle_update(ll["th"],ll["gg"],A=A,B=B,n=n,log_print=log_print)
+    llnew = Grad_mle_update(ll["th"],ll["gg"],A=A,B=B,n=n,log_print=log_print,t0=t0)
     if(cb_func!=None): cb_func(llnew)
     # print(llnew["th"],llnew["gg"])
     a = np.linalg.norm(ll["th"] - llnew["th"], ord=1)
@@ -531,10 +538,13 @@ def optimisation(th,gg,A,B,n=1,O=None,orth="no",tol=1e-3,iterss=200,log_print=Tr
         c = np.linalg.norm(llnew["mle"]["grad"], ord=1)
         ll = llnew.copy()
         if(orth=="yes"):
+            if(Odet1 and np.linalg.det(newO)<0):
+                Q=np.eye(len(gg)); Q[0,0]=-1
+                newO=Q@newO; ll["gg"][0]*=-1
             newO = Grad_mle_orth_update(ll["th"],ll["gg"],A=A,B=B,O=newO,n=n,log_print=log_print,AA_plus=AA_plus)["O"]
-            llnew = Grad_mle_update_optim_sqrt(ll["th"],ll["gg"],A=A,B=B,O=newO,n=n)
+            llnew = update_func(ll["th"],ll["gg"],A=A,B=B,O=newO,n=n,t0=t0)
         else:
-            llnew = Grad_mle_update_optim_sqrt(ll["th"],ll["gg"],A=A,B=B,O=newO,n=n)
+            llnew = update_func(ll["th"],ll["gg"],A=A,B=B,O=newO,n=n,t0=t0)
         
         if(cb_func!=None): cb_func(llnew)
         if(log_print): 
