@@ -403,12 +403,15 @@ def gene_data_Normalize_noise(Sig_lim=20,mu_lim=20,gene_size=500,multi=100,cente
 
 
 #####################################################
-from sei_kume import Loglikelihood
+from sei_kume import Loglikelihood,optimisation
 
-def comp_logL_Sigmu(model,x_test,y_test,t0=1,method="hg"):
+def comp_logL_Sigmu(model,x_test,y_test, 
+        t0=1,tol=5*1e-3,iterss=100,method="hg",mle=False):
     y_preds = model.predict(x_test, verbose=0)
 
-    res=[]
+    res_T0=[]
+    res_M0=[]
+    iters=[]
     for i,y_pred in enumerate(y_preds):
         if(len(y_pred)==5):
             Sig0 = [y_pred[0:2],y_pred[1:3]]
@@ -446,9 +449,20 @@ def comp_logL_Sigmu(model,x_test,y_test,t0=1,method="hg"):
         elif(method=="SPA"):
             log_0 = Loglikelihood(th0,ga0,A,B,O=O0,n=1,method="SPA")
             log_T = Loglikelihood(th_T,ga_T,A,B,O=O_T,n=1,method="SPA")
+        if(mle is True):
+            MLE = optimisation(th0,ga0,A,B,n=1,O=O0,orth="yes",tol=tol,
+                                iterss=iterss,t0=t0,sqrt=False,log_print=False)
+            res_M0.append(abs(MLE["mle"]["log"]-log_0))
+            iters.append(MLE["worked time"]["iters"])
         # print("%2d:log_T, log_0: %f, %f"%(i+1,log_T["log"],log_0["log"]))
-        res.append(abs(log_T-log_0))
-    return np.mean(res), res
+        res_T0.append(abs(log_T-log_0))
+    results = {"T-0":np.mean(res_T0),"T-0_list":res_T0}
+    if(mle is True):
+        results["M-0"]=np.mean(res_M0)
+        results["M-0_list"]=res_M0
+        results["iters"]=np.mean(iters)
+    # return np.mean(res), res
+    return results
 
 
 

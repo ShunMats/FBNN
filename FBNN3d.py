@@ -40,7 +40,7 @@ def z_Normalize_3d(hist_3d):
     if(hist_3d.shape!=(10,10)): hist = hist.reshape(hist_3d.shape)
     return hist, (5-idx[1])*0.2*np.pi
 
-def hist_gene_3d(Sigma,mu,multi=100,normalize=False,out_shape=-1):
+def hist_gene_3d(Sigma,mu,multi=100,normalize=False,out_shape=-1,noise=False):
     eps=0.05
     hist_3d=np.zeros((10,10))
     for i in range(10):
@@ -49,6 +49,8 @@ def hist_gene_3d(Sigma,mu,multi=100,normalize=False,out_shape=-1):
     if(multi>=0): 
         hist_3d = hist_3d/np.max(hist_3d)
         hist_3d = (multi * hist_3d).astype(int) 
+    if(noise is True): 
+        hist_3d = hist_3d + np.abs(np.random.standard_normal((10,10))).astype(int)
     hist_3d = hist_3d/np.max(hist_3d)
     rad=None
     if(normalize is True): 
@@ -64,7 +66,8 @@ def z_rot(rad):
     ]
     return np.array(z_rot)
 
-def gene_data_3d(Sig_lim=20,mu_lim=20,gene_size=500,multi=100,normalize=False,eig0=None,out_shape=-1):
+def gene_data_3d(Sig_lim=20,mu_lim=20,gene_size=500,multi=100,
+                normalize=False,eig0=None,out_shape=-1,noise=False):
     x_gene=[]
     y_gene=[]
     for _ in range(gene_size):
@@ -76,10 +79,10 @@ def gene_data_3d(Sig_lim=20,mu_lim=20,gene_size=500,multi=100,normalize=False,ei
         Sig = S@np.diag(eig)@S.T
         mu = [random.uniform(-mu_lim, mu_lim),random.uniform(-mu_lim, mu_lim),random.uniform(-mu_lim, mu_lim)]  
         # mu=[random.uniform(0, mu_lim),random.uniform(0, mu_lim)]
-        myhist,rad = hist_gene_3d(Sig,mu,multi,normalize,out_shape=out_shape)
+        myhist,rad = hist_gene_3d(Sig,mu,multi,normalize,out_shape=out_shape,noise=noise)
         if(rad!=None):
             Sig = z_rot(-rad).T@Sig@z_rot(-rad)
-            mu  = z_rot(rad)@mu
+            mu  = z_rot(rad)@mu 
         x_gene.append(myhist)
         y_gene.append(list(Sig[0])+list(Sig[1][1:3])+list(Sig[2][2:3])+list(mu))
 
@@ -155,12 +158,15 @@ def AB_gene_3d(hist):
 
 
 #####################################################
-from sei_kume import Loglikelihood
+from sei_kume import Loglikelihood,optimisation
 
-def comp_logL_Sigmu_3d(model,x_test,y_test):
+def comp_logL_Sigmu_3d(model,x_test,y_test, 
+            t0=1,tol=5*1e-3,iterss=100,method="hg",mle=False):
     y_preds = model.predict(x_test, verbose=0)
 
-    res=[]
+    res_T0=[]
+    res_M0=[]
+    iters=[]
     for i,y_pred in enumerate(y_preds):
         if(len(y_pred)==9):
             pred=list(y_pred)
@@ -170,23 +176,37 @@ def comp_logL_Sigmu_3d(model,x_test,y_test):
             O0 = np.diag(np.sign(O0@Sig0@mu0)+1e-2)@O0
             th0 = np.diag(O0@Sig0@O0.T)/2
             ga0 = O0@Sig0@mu0
-
+            ####
             y=list(y_test[i])
             Sig_T = np.array([y[0:3],y[1:2]+y[3:5],y[2:3]+y[4:5]+y[5:6]])
             mu_T = np.array(y[6:])
             O_T = np.linalg.eig(Sig_T)[1].T
-            O_T = np.diag(np.sign(O_T@Sig_T@mu_T))@O_T
+            O_T = np.diag(np.sign(O_T@Sig_T@mu_T)+1e-2)@O_T
             th_T = np.diag(O_T@Sig_T@O_T.T)/2
             ga_T = O_T@Sig_T@mu_T
 
         hist = x_test[i]
         A,B,n = AB_gene_3d(hist)
 
-        log_0 = Loglikelihood(th0,ga0,A,B,O=O0,n=1,method="hg")
-        log_T = Loglikelihood(th_T,ga_T,A,B,O=O_T,n=1,method="hg")
-        # print("%2d:log_T, log_0: %f, %f"%(i+1,log_T["log"],log_0["log"]))
-        res.append(abs(log_T["log"]-log_0["log"]))
-    return np.mean(res), res
+        if(method=="hg"):
+            log_0 = Loglikelihood(th0,ga0,A,B,O=O0,n=1,method="hg")["log"]
+            log_T = Loglikelihood(th_T,ga_T,A,B,O=O_T,n=1,method="hg")["log"]
+        elif(method=="SPA"):
+            log_0 = Loglikelihood(th0,ga0,A,B,O=O0,n=1,method="SPA")
+            log_T = Loglikelihood(th_T,ga_T,A,B,O=O_T,n=1,method="SPA")
+        if(mle is True):
+            MLE = optimisation(th0,ga0,A,B,n=1,O=O0,orth="yes",tol=tol,
+                                iterss=iterss,t0=t0,sqrt=False,log_print=False)
+            res_M0.append(abs(MLE["mle"]["log"]-log_0))
+            iters.append(MLE["worked time"]["iters"])
+        res_T0.append(abs(log_T-log_0))
+    results = {"T-0":np.mean(res_T0),"T-0_list":res_T0}
+    if(mle is True):
+        results["M-0"]=np.mean(res_M0)
+        results["M-0_list"]=res_M0
+        results["iters"]=np.mean(iters)
+    return results
+    # return np.mean(res), res
 
 
 
